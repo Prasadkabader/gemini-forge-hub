@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
 import { ArrowLeftIcon, PlusIcon, SendIcon, BotIcon, UserIcon, FileTextIcon, UploadIcon } from 'lucide-react';
+import { FileUpload } from '@/components/FileUpload';
 
 interface Project {
   id: string;
@@ -355,18 +356,16 @@ const Project = () => {
               <TabsContent value="files" className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Files</h3>
-                  <Button size="sm" variant="outline">
-                    <UploadIcon className="h-4 w-4" />
-                  </Button>
                 </div>
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-center text-muted-foreground">
-                      <FileTextIcon className="h-8 w-8 mx-auto mb-2" />
-                      <p className="text-sm">File upload coming soon</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                <FileUpload 
+                  projectId={id!} 
+                  onFileUploaded={(file) => {
+                    toast({
+                      title: "File Ready",
+                      description: `${file.filename} is now available for use in prompts`,
+                    });
+                  }}
+                />
               </TabsContent>
             </Tabs>
           </div>

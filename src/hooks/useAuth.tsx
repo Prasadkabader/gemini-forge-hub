@@ -47,14 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
+    // Note: To disable signup confirmation emails, go to:
+    // Supabase Dashboard > Authentication > Settings > Email Confirm = OFF
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        emailRedirectTo: redirectUrl
-      }
     });
     return { error };
   };

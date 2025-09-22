@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
-import { PlusIcon, MessageSquareIcon, LogOutIcon } from 'lucide-react';
+import { PlusIcon, MessageSquareIcon, LogOutIcon, TrashIcon, BotIcon, FileTextIcon, BrainIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface Project {
@@ -24,6 +24,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', description: '' });
+  const [deletingProject, setDeletingProject] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -112,12 +113,60 @@ const Dashboard = () => {
     }
   };
 
+  const deleteProject = async (projectId: string, projectName: string) => {
+    if (!confirm(`Are you sure you want to delete "${projectName}"? This will also delete all associated prompts and files.`)) {
+      return;
+    }
+
+    setDeletingProject(projectId);
+
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId);
+
+    if (error) {
+      console.error('Error deleting project:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete project",
+        variant: "destructive",
+      });
+    } else {
+      setProjects(projects.filter(p => p.id !== projectId));
+      toast({
+        title: "Success",
+        description: `Project "${projectName}" deleted successfully`,
+      });
+    }
+
+    setDeletingProject(null);
+  };
+
   const handleSignOut = async () => {
     await signOut();
     toast({
       title: "Signed out",
       description: "You have been signed out successfully",
     });
+  };
+
+  const getProjectCardVariant = (index: number) => {
+    const variants = [
+      { bg: 'bg-gradient-to-br from-purple-50 to-purple-100', border: 'border-purple-200', icon: 'text-purple-600' },
+      { bg: 'bg-gradient-to-br from-blue-50 to-blue-100', border: 'border-blue-200', icon: 'text-blue-600' },
+      { bg: 'bg-gradient-to-br from-green-50 to-green-100', border: 'border-green-200', icon: 'text-green-600' },
+      { bg: 'bg-gradient-to-br from-orange-50 to-orange-100', border: 'border-orange-200', icon: 'text-orange-600' },
+      { bg: 'bg-gradient-to-br from-pink-50 to-pink-100', border: 'border-pink-200', icon: 'text-pink-600' },
+      { bg: 'bg-gradient-to-br from-teal-50 to-teal-100', border: 'border-teal-200', icon: 'text-teal-600' },
+    ];
+    return variants[index % variants.length];
+  };
+
+  const getProjectIcon = (index: number) => {
+    const icons = [BotIcon, BrainIcon, MessageSquareIcon, FileTextIcon];
+    const IconComponent = icons[index % icons.length];
+    return IconComponent;
   };
 
   if (loading) {
@@ -218,26 +267,58 @@ const Dashboard = () => {
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => (
-              <Card key={project.id} className="hover:shadow-lg transition-shadow cursor-pointer">
-                <Link to={`/project/${project.id}`}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <MessageSquareIcon className="h-5 w-5" />
-                      <span>{project.name}</span>
-                    </CardTitle>
-                    <CardDescription>
-                      {project.description || 'No description provided'}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">
-                      Created {new Date(project.created_at).toLocaleDateString()}
-                    </p>
-                  </CardContent>
-                </Link>
-              </Card>
-            ))}
+            {projects.map((project, index) => {
+              const variant = getProjectCardVariant(index);
+              const IconComponent = getProjectIcon(index);
+              return (
+                <Card 
+                  key={project.id} 
+                  className={`group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-105 animate-fade-in ${variant.bg} ${variant.border} border-2`}
+                  style={{ animationDelay: `${index * 100}ms` }}
+                >
+                  <Link to={`/project/${project.id}`} className="block">
+                    <CardHeader className="relative pb-2">
+                      <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <IconComponent className="h-16 w-16" />
+                      </div>
+                      <CardTitle className="flex items-center space-x-3 relative z-10">
+                        <div className={`p-2 rounded-lg bg-white/50 ${variant.icon}`}>
+                          <IconComponent className="h-5 w-5" />
+                        </div>
+                        <span className="truncate">{project.name}</span>
+                      </CardTitle>
+                      <CardDescription className="relative z-10 line-clamp-2">
+                        {project.description || 'No description provided'}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="relative z-10 pt-0">
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Created {new Date(project.created_at).toLocaleDateString()}
+                      </p>
+                    </CardContent>
+                  </Link>
+                  <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteProject(project.id, project.name);
+                      }}
+                      disabled={deletingProject === project.id}
+                    >
+                      {deletingProject === project.id ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-destructive"></div>
+                      ) : (
+                        <TrashIcon className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </main>
