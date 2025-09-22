@@ -2,6 +2,53 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// Simple PDF text extraction function
+async function extractPDFText(file: File): Promise<string> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const decoder = new TextDecoder();
+    
+    // Convert to string and look for text patterns
+    const pdfString = decoder.decode(uint8Array);
+    
+    // Extract text between stream/endstream markers (basic approach)
+    const textMatches = pdfString.match(/stream\s*(.*?)\s*endstream/gs);
+    let extractedText = '';
+    
+    if (textMatches) {
+      for (const match of textMatches) {
+        // Remove stream/endstream markers and clean up
+        const content = match.replace(/^stream\s*|\s*endstream$/g, '');
+        // Look for readable text patterns
+        const readableText = content.match(/\(([^)]+)\)/g);
+        if (readableText) {
+          extractedText += readableText.map(t => t.slice(1, -1)).join(' ') + ' ';
+        }
+      }
+    }
+    
+    // If no text found, try alternative extraction
+    if (!extractedText.trim()) {
+      // Look for text objects
+      const textObjects = pdfString.match(/BT\s*(.*?)\s*ET/gs);
+      if (textObjects) {
+        for (const obj of textObjects) {
+          const textCommands = obj.match(/\(([^)]+)\)/g);
+          if (textCommands) {
+            extractedText += textCommands.map(t => t.slice(1, -1)).join(' ') + ' ';
+          }
+        }
+      }
+    }
+    
+    return extractedText.trim() || 'PDF uploaded but no readable text could be extracted';
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    return 'PDF uploaded but text extraction failed';
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -60,9 +107,9 @@ serve(async (req) => {
       const lines = fileContent.split('\n').slice(0, 5);
       contentPreview = lines.join('\n') + (fileContent.split('\n').length > 5 ? '\n...' : '');
     } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      // For PDF, we'd need a proper PDF parser, for now just store basic info
-      parsedContent = 'PDF file uploaded - content parsing not yet implemented';
-      contentPreview = `PDF file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      // Extract text from PDF
+      parsedContent = await extractPDFText(file);
+      contentPreview = parsedContent.substring(0, 200) + (parsedContent.length > 200 ? '...' : '');
     } else {
       parsedContent = fileContent;
       contentPreview = fileContent.substring(0, 200) + (fileContent.length > 200 ? '...' : '');
