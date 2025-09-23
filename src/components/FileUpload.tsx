@@ -69,16 +69,21 @@ export const FileUpload = ({ projectId, onFileUploaded }: FileUploadProps) => {
         body: formData,
         headers: {
           Authorization: `Bearer ${session?.access_token}`,
-          apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cWhhZWp6cHlnbW9ycWdma2R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg0MzYzODEsImV4cCI6MjA3NDAxMjM4MX0.y6M-6Wlj7g-1KNb355UzyPWc3xsv2n2dRSv_psR3_Eo',
         },
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Server error: ${errorText}`);
+        console.error('Server response:', errorText);
+        throw new Error(`Server error (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
+      
+      if (!data || !data.file) {
+        throw new Error('Invalid response format from server');
+      }
+      
       const uploadedFileData = data.file;
       setUploadedFile(uploadedFileData);
       

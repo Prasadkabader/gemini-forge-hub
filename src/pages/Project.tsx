@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
 import { ArrowLeftIcon, PlusIcon, SendIcon, BotIcon, UserIcon, FileTextIcon, UploadIcon } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
+import { ChatMessage } from '@/components/ChatMessage';
 
 interface Project {
   id: string;
@@ -157,39 +158,44 @@ const Project = () => {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatMessage.trim() || !user || !id || !session) return;
+    if (!chatMessage.trim() || !user || !id) return;
 
     setChatLoading(true);
     const userMessage = chatMessage;
     setChatMessage('');
 
-    // Add user message to local state immediately
-    const userMessageObj = {
-      id: `temp-${Date.now()}`,
-      message: userMessage,
-      is_user: true,
-      created_at: new Date().toISOString()
-    };
-    setChats(prev => [...prev, userMessageObj]);
-
     try {
-      const response = await supabase.functions.invoke('chat', {
-        body: {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`https://kvqhaejzpygmorqgfkdv.supabase.co/functions/v1/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cWhhZWp6cHlnbW9ycWdma2R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg0MzYzODEsImV4cCI6MjA3NDAxMjM4MX0.y6M-6Wlj7g-1KNb355UzyPWc3xsv2n2dRSv_psR3_Eo',
+        },
+        body: JSON.stringify({
           message: userMessage,
           projectId: id
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        }),
       });
 
-      if (response.error) {
-        throw response.error;
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Chat API error:', errorText);
+        throw new Error(`Failed to send message (${response.status}): ${errorText}`);
       }
 
-      // Refresh chats to get the complete conversation
-      await fetchChats();
+      const data = await response.json();
       
+      if (!data || !data.message) {
+        throw new Error('Invalid response from chat API');
+      }
+
+      // Refresh messages from database to get both user and AI messages
+      await fetchChats();
+      scrollToBottom();
+
       toast({
         title: "Message sent",
         description: "AI response received!",
@@ -198,11 +204,12 @@ const Project = () => {
       console.error('Error sending message:', error);
       toast({
         title: "Error",
-        description: "Failed to send message",
+        description: error instanceof Error ? error.message : "Failed to send message",
         variant: "destructive",
       });
-      // Remove the temp user message on error
-      setChats(prev => prev.filter(msg => msg.id !== userMessageObj.id));
+      
+      // Re-enable the input and put the message back
+      setChatMessage(userMessage);
     } finally {
       setChatLoading(false);
     }
@@ -392,40 +399,28 @@ const Project = () => {
                         <p className="text-sm">Send a message to begin chatting with the AI assistant.</p>
                       </div>
                     ) : (
-                      chats.map((chat) => (
-                        <div key={chat.id} className={`flex ${chat.is_user ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`flex max-w-[80%] space-x-2 ${chat.is_user ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                              chat.is_user ? 'bg-primary' : 'bg-secondary'
-                            }`}>
-                              {chat.is_user ? (
-                                <UserIcon className="h-4 w-4 text-primary-foreground" />
-                              ) : (
-                                <BotIcon className="h-4 w-4 text-secondary-foreground" />
-                              )}
-                            </div>
-                            <div className={`p-3 rounded-lg ${
-                              chat.is_user 
-                                ? 'bg-primary text-primary-foreground' 
-                                : 'bg-muted'
-                            }`}>
-                              <p className="text-sm whitespace-pre-wrap">{chat.message}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))
+                      <div className="space-y-1">
+                        {chats.map((chat) => (
+                          <ChatMessage
+                            key={chat.id}
+                            message={chat.message}
+                            isUser={chat.is_user}
+                            timestamp={chat.created_at}
+                          />
+                        ))}
+                      </div>
                     )}
                     {chatLoading && (
                       <div className="flex justify-start">
                         <div className="flex max-w-[80%] space-x-2">
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
-                            <BotIcon className="h-4 w-4 text-secondary-foreground" />
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 flex items-center justify-center">
+                            <BotIcon className="h-4 w-4 text-white" />
                           </div>
-                          <div className="bg-muted p-3 rounded-lg">
+                          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm p-3 rounded-2xl">
                             <div className="flex space-x-1">
-                              <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
-                              <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                              <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                              <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                              <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                              <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                             </div>
                           </div>
                         </div>
