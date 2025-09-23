@@ -18,7 +18,7 @@ async function extractPDFText(file: File): Promise<string> {
     const textStrings: string[] = [];
     
     // Method 1: Extract text from parentheses (most common PDF text format)
-    const parenthesesMatches = pdfString.match(/\(([^)\\]*(\\.[^)\\]*)*)\)/g);
+    const parenthesesMatches = pdfString.match(/\([^)]*\)/g);
     if (parenthesesMatches) {
       parenthesesMatches.forEach(match => {
         let text = match.slice(1, -1); // Remove parentheses
@@ -64,7 +64,7 @@ async function extractPDFText(file: File): Promise<string> {
     if (textObjectMatches) {
       textObjectMatches.forEach(match => {
         // Extract Tj and TJ commands (show text operators)
-        const tjMatches = match.match(/\(([^)\\]*(\\.[^)\\]*)*)\)\s*Tj/g);
+        const tjMatches = match.match(/\([^)]*\)\s*Tj/g);
         if (tjMatches) {
           tjMatches.forEach(tj => {
             const text = tj.replace(/\)\s*Tj$/, '').replace(/^\(/, '');
