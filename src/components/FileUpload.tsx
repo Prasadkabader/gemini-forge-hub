@@ -64,7 +64,16 @@ export const FileUpload = ({ projectId, onFileUploaded }: FileUploadProps) => {
 
       const { data: { session } } = await supabase.auth.getSession();
       
-      const response = await fetch(`https://kvqhaejzpygmorqgfkdv.supabase.co/functions/v1/file-upload`, {
+      if (!session?.access_token) {
+        throw new Error('No valid session found. Please sign in again.');
+      }
+      
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://kvqhaejzpygmorqgfkdv.supabase.co';
+      const functionUrl = `${supabaseUrl}/functions/v1/file-upload`;
+      
+      console.log('Uploading file to:', functionUrl);
+      
+      const response = await fetch(functionUrl, {
         method: 'POST',
         body: formData,
         headers: {
@@ -72,16 +81,25 @@ export const FileUpload = ({ projectId, onFileUploaded }: FileUploadProps) => {
         },
       });
 
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
-        const errorText = await response.text();
+        let errorText;
+        try {
+          const errorData = await response.json();
+          errorText = errorData.error || errorData.message || 'Unknown error';
+        } catch {
+          errorText = await response.text();
+        }
         console.error('Server response:', errorText);
         throw new Error(`Server error (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('Upload response:', data);
       
-      if (!data || !data.file) {
-        throw new Error('Invalid response format from server');
+      if (!data.success || !data.file) {
+        throw new Error(data.error || 'Invalid response format from server');
       }
       
       const uploadedFileData = data.file;
@@ -89,7 +107,7 @@ export const FileUpload = ({ projectId, onFileUploaded }: FileUploadProps) => {
       
       toast({
         title: "File uploaded successfully",
-        description: `${file.name} has been processed and is ready to use`,
+        description: data.message || `${file.name} has been processed and is ready to use`,
       });
 
       onFileUploaded?.(uploadedFileData);
