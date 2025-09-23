@@ -64,18 +64,22 @@ export const FileUpload = ({ projectId, onFileUploaded }: FileUploadProps) => {
 
       const { data: { session } } = await supabase.auth.getSession();
       
-      const response = await supabase.functions.invoke('file-upload', {
+      const response = await fetch(`https://kvqhaejzpygmorqgfkdv.supabase.co/functions/v1/file-upload`, {
+        method: 'POST',
         body: formData,
         headers: {
           Authorization: `Bearer ${session?.access_token}`,
+          apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2cWhhZWp6cHlnbW9ycWdma2R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg0MzYzODEsImV4cCI6MjA3NDAxMjM4MX0.y6M-6Wlj7g-1KNb355UzyPWc3xsv2n2dRSv_psR3_Eo',
         },
       });
 
-      if (response.error) {
-        throw new Error(response.error.message);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error: ${errorText}`);
       }
 
-      const { file: uploadedFileData, preview } = response.data;
+      const data = await response.json();
+      const uploadedFileData = data.file;
       setUploadedFile(uploadedFileData);
       
       toast({
