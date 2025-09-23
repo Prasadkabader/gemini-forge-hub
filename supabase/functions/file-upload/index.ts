@@ -2,50 +2,129 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Simple PDF text extraction function
+// Enhanced PDF text extraction function
 async function extractPDFText(file: File): Promise<string> {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
-    const decoder = new TextDecoder();
     
-    // Convert to string and look for text patterns
-    const pdfString = decoder.decode(uint8Array);
-    
-    // Extract text between stream/endstream markers (basic approach)
-    const textMatches = pdfString.match(/stream\s*(.*?)\s*endstream/gs);
-    let extractedText = '';
-    
-    if (textMatches) {
-      for (const match of textMatches) {
-        // Remove stream/endstream markers and clean up
-        const content = match.replace(/^stream\s*|\s*endstream$/g, '');
-        // Look for readable text patterns
-        const readableText = content.match(/\(([^)]+)\)/g);
-        if (readableText) {
-          extractedText += readableText.map(t => t.slice(1, -1)).join(' ') + ' ';
-        }
-      }
+    // Convert to Latin-1 string for proper PDF parsing
+    let pdfString = '';
+    for (let i = 0; i < uint8Array.length; i++) {
+      pdfString += String.fromCharCode(uint8Array[i]);
     }
     
-    // If no text found, try alternative extraction
-    if (!extractedText.trim()) {
-      // Look for text objects
-      const textObjects = pdfString.match(/BT\s*(.*?)\s*ET/gs);
-      if (textObjects) {
-        for (const obj of textObjects) {
-          const textCommands = obj.match(/\(([^)]+)\)/g);
-          if (textCommands) {
-            extractedText += textCommands.map(t => t.slice(1, -1)).join(' ') + ' ';
+    let extractedText = '';
+    const textStrings: string[] = [];
+    
+    // Method 1: Extract text from parentheses (most common PDF text format)
+    const parenthesesMatches = pdfString.match(/\(([^)\\]*(\\.[^)\\]*)*)\)/g);
+    if (parenthesesMatches) {
+      parenthesesMatches.forEach(match => {
+        let text = match.slice(1, -1); // Remove parentheses
+        // Handle common PDF escape sequences
+        text = text.replace(/\\n/g, '\n')
+                  .replace(/\\r/g, '\r')
+                  .replace(/\\t/g, '\t')
+                  .replace(/\\b/g, '\b')
+                  .replace(/\\f/g, '\f')
+                  .replace(/\\(/g, '(')
+                  .replace(/\\)/g, ')')
+                  .replace(/\\\\/g, '\\');
+        
+        // Only include if it looks like readable text
+        if (text && /[a-zA-Z0-9\s]/.test(text) && text.length > 1) {
+          textStrings.push(text);
+        }
+      });
+    }
+    
+    // Method 2: Extract text from angle brackets (hexadecimal encoded)
+    const hexMatches = pdfString.match(/<([0-9A-Fa-f\s]+)>/g);
+    if (hexMatches) {
+      hexMatches.forEach(match => {
+        const hex = match.slice(1, -1).replace(/\s/g, '');
+        if (hex.length % 2 === 0) {
+          let text = '';
+          for (let i = 0; i < hex.length; i += 2) {
+            const byte = parseInt(hex.substr(i, 2), 16);
+            if (byte > 31 && byte < 127) { // Printable ASCII
+              text += String.fromCharCode(byte);
+            }
+          }
+          if (text && text.length > 1) {
+            textStrings.push(text);
           }
         }
-      }
+      });
     }
     
-    return extractedText.trim() || 'PDF uploaded but no readable text could be extracted';
+    // Method 3: Look for text between BT and ET operators
+    const textObjectMatches = pdfString.match(/BT\s+(.*?)\s+ET/gs);
+    if (textObjectMatches) {
+      textObjectMatches.forEach(match => {
+        // Extract Tj and TJ commands (show text operators)
+        const tjMatches = match.match(/\(([^)\\]*(\\.[^)\\]*)*)\)\s*Tj/g);
+        if (tjMatches) {
+          tjMatches.forEach(tj => {
+            const text = tj.replace(/\)\s*Tj$/, '').replace(/^\(/, '');
+            if (text && /[a-zA-Z0-9]/.test(text)) {
+              textStrings.push(text);
+            }
+          });
+        }
+        
+        // Extract TJ array commands
+        const tjArrayMatches = match.match(/\[([^\]]*)\]\s*TJ/g);
+        if (tjArrayMatches) {
+          tjArrayMatches.forEach(tja => {
+            const content = tja.replace(/\]\s*TJ$/, '').replace(/^\[/, '');
+            const stringMatches = content.match(/\(([^)]*)\)/g);
+            if (stringMatches) {
+              stringMatches.forEach(str => {
+                const text = str.slice(1, -1);
+                if (text && /[a-zA-Z0-9]/.test(text)) {
+                  textStrings.push(text);
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+    
+    // Method 4: Search for common text patterns in the raw PDF
+    const rawTextMatches = pdfString.match(/[A-Za-z][A-Za-z0-9\s.,!?;:'"()-]{10,}/g);
+    if (rawTextMatches && textStrings.length < 5) {
+      rawTextMatches.forEach(text => {
+        // Filter out obvious non-text patterns
+        if (!text.match(/^[A-Z]{10,}$/) && // Not all caps strings
+            !text.match(/^\d+$/) && // Not just numbers
+            !text.match(/^[^a-zA-Z]*$/) && // Contains letters
+            text.split(' ').length > 2) { // Multiple words
+          textStrings.push(text.trim());
+        }
+      });
+    }
+    
+    // Clean and join the extracted text
+    extractedText = textStrings
+      .filter(text => text && text.trim().length > 0)
+      .map(text => text.trim())
+      .join(' ')
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    // If still no readable text found
+    if (!extractedText || extractedText.length < 10) {
+      return 'PDF uploaded successfully, but no readable text could be extracted. The PDF may contain only images, be encrypted, or use unsupported encoding.';
+    }
+    
+    return extractedText;
+    
   } catch (error) {
     console.error('PDF extraction error:', error);
-    return 'PDF uploaded but text extraction failed';
+    return 'PDF uploaded but text extraction failed due to parsing error.';
   }
 }
 
